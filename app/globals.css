@@ -1,0 +1,110 @@
+@import "tailwindcss";
+
+/* Neoesis CRM — negro y blanco, minimalista y futurista, con toques morados de Neoesis */
+:root {
+  --bg: #000000;
+  --surface: #0a0a0c;
+  --surface-2: #121216;
+  --line: #1f1f26;
+  --ink: #f5f5f7;
+  --muted: #86868f;
+  --accent: #9d74ff;   /* morado Neoesis */
+  --orchid: #9d74ff;
+  --deep: #5b3fd6;
+  --whatsapp: #25d366;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: var(--font-ui), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-code), ui-monospace, monospace;
+}
+
+* { border-color: var(--line); }
+
+body {
+  background-color: var(--bg);
+  /* Retícula de puntos muy sutil: toque futurista sin distraer */
+  background-image: radial-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 22px 22px;
+  background-attachment: fixed;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  letter-spacing: -0.005em;
+}
+
+::selection { background: rgba(157, 116, 255, 0.4); color: #fff; }
+
+h1, h2 { letter-spacing: -0.02em; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+/* Tarjeta con luz que sigue al cursor (spotlight de 21st.dev), en morado tenue */
+.spot { position: relative; overflow: hidden; }
+.spot::before {
+  content: "";
+  position: absolute; inset: 0;
+  background: radial-gradient(260px circle at var(--mx, -500px) var(--my, -500px), rgba(157, 116, 255, 0.12), transparent 60%);
+  pointer-events: none; transition: opacity .3s; opacity: 0;
+}
+.spot:hover::before { opacity: 1; }
+.spot::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: radial-gradient(180px circle at var(--mx, -500px) var(--my, -500px), rgba(157, 116, 255, 0.55), transparent 70%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  padding: 1px; opacity: 0; transition: opacity .3s;
+}
+.spot:hover::after { opacity: 1; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: .45rem;
+  border-radius: 8px; padding: .5rem .9rem; font-size: .84rem; font-weight: 500;
+  border: 1px solid var(--line); background: transparent; color: var(--ink);
+  cursor: pointer; transition: background .15s, border-color .15s, color .15s, box-shadow .15s;
+}
+.btn:hover { background: rgba(255, 255, 255, 0.05); border-color: #34343e; }
+.btn-primary { background: #fff; border-color: #fff; color: #000; }
+.btn-primary:hover { background: #fff; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(157, 116, 255, 0.35), 0 0 24px -4px rgba(157, 116, 255, 0.6); color: #000; }
+.btn-wa { background: transparent; border-color: rgba(37, 211, 102, 0.5); color: #4ade80; }
+.btn-wa:hover { background: rgba(37, 211, 102, 0.12); border-color: var(--whatsapp); }
+.btn:disabled { opacity: .35; cursor: not-allowed; box-shadow: none; }
+
+.input {
+  width: 100%; border: 1px solid var(--line); border-radius: 8px;
+  padding: .52rem .75rem; font-size: .9rem; background: #050506; color: var(--ink);
+  transition: border-color .15s, box-shadow .15s;
+}
+.input::placeholder { color: #55555e; }
+.input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(157, 116, 255, 0.18); }
+select.input option, select.input optgroup { background: var(--surface); color: var(--ink); }
+input[type="date"].input, input[type="time"].input { color-scheme: dark; }
+input[type="checkbox"] { accent-color: var(--accent); }
+
+/* Etiquetas en mono y mayúsculas: estética de consola */
+.label {
+  display: block; font-family: var(--font-mono); font-size: .66rem; font-weight: 500;
+  color: var(--muted); margin-bottom: .35rem; letter-spacing: .12em; text-transform: uppercase;
+}
+.chip { display: inline-flex; align-items: center; border-radius: 6px; padding: .1rem .5rem; font-size: .7rem; font-weight: 500; white-space: nowrap; }
+.muted { color: var(--muted); }
+.accent-text { color: var(--accent); }
+.mono { font-family: var(--font-mono); }
+code { font-family: var(--font-mono); background: var(--surface-2); padding: .05rem .35rem; border-radius: 4px; font-size: .8em; }
+
+table.tabla { width: 100%; font-size: .85rem; border-collapse: collapse; }
+table.tabla th {
+  text-align: left; font-family: var(--font-mono); font-size: .64rem; text-transform: uppercase; letter-spacing: .12em;
+  color: var(--muted); padding: .65rem .75rem; border-bottom: 1px solid var(--line); white-space: nowrap; font-weight: 500;
+}
+table.tabla td { padding: .65rem .75rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.tabla tbody tr { transition: background .12s; }
+table.tabla tbody tr:hover { background: rgba(255, 255, 255, 0.025); }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #26262e; border-radius: 8px; }
+::-webkit-scrollbar-track { background: transparent; }

@@ -1,0 +1,339 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { cerrarSesion, iniciarSesion, requerirUsuario, verificarClave } from "@/lib/auth";
+import { ETAPAS, RUBROS } from "@/lib/constants";
+import { hoy, sumarDias } from "@/lib/dates";
+import { count, enc, insert, remove, select, update } from "@/lib/db";
+import { cambiosPorEtapa, cambiosPorToque } from "@/lib/followup";
+import { buscarLugares } from "@/lib/places";
+import { normalizarTelefono } from "@/lib/format";
+import type { PlaceResult, Prospect, Template } from "@/lib/types";
+
+const txt = (f: FormData, k: string) => {
+  const v = f.get(k);
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+};
+const num = (f: FormData, k: string) => {
+  const v = txt(f, k);
+  if (v == null) return null;
+  const n = Number(v.replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+};
+
+function refrescar(id?: string) {
+  revalidatePath("/", "layout");
+  if (id) revalidatePath(`/prospectos/${id}`);
+}
+
+// ---------------- Sesión ----------------
+
+export async function login(_prev: { error?: string } | undefined, f: FormData) {
+  const nombre = txt(f, "nombre") ?? "";
+  const clave = txt(f, "clave") ?? "";
+  if (!(await verificarClave(nombre, clave))) return { error: "Nombre o clave incorrectos." };
+  await iniciarSesion(nombre);
+  redirect("/");
+}
+
+export async function logout() {
+  await cerrarSesion();
+  redirect("/login");
+}
+
+// ---------------- Captura (Google Places) ----------------
+
+export type EstadoBusqueda = {
+  error?: string;
+  resultados?: PlaceResult[];
+  consultas?: number;
+  cupo?: Cupo;
+};
+
+export type Cupo = { usadasMes: number; limiteMes: number; usadasDia: number; limiteDia: number; restantes: number };
+
+/** Google regala 1.000 consultas al mes de este tipo. Nunca permitimos pasar de 950. */
+const TOPE_GRATIS_MES = 950;
+
+export async function cupoGoogle(): Promise<Cupo> {
+  const d = hoy();
+  const inicioMes = `${d.slice(0, 7)}-01T05:00:00Z`;
+  const inicioDia = `${d}T05:00:00Z`;
+  const limiteMes = Math.min(Number(process.env.PLACES_MAX_BUSQUEDAS_MES ?? TOPE_GRATIS_MES) || TOPE_GRATIS_MES, TOPE_GRATIS_MES);
+  const limiteDia = Math.min(Number(process.env.PLACES_MAX_BUSQUEDAS_DIA ?? 30) || 30, limiteMes);
+  const [usadasMes, usadasDia] = await Promise.all([
+    count(`searches?select=id&created_at=gte.${enc(inicioMes)}`),
+    count(`searches?select=id&created_at=gte.${enc(inicioDia)}`),
+  ]);
+  const restantes = Math.max(0, Math.min(limiteMes - usadasMes, limiteDia - usadasDia));
+  return { usadasMes, limiteMes, usadasDia, limiteDia, restantes };
+}
+
+/**
+ * Busca UN rubro en UN distrito. La pantalla de Captura la llama una vez por rubro
+ * (búsqueda simple) o varias veces seguidas (barrido del distrito).
+ */
+export async function buscarRubro(entrada: { rubro: string; distrito: string; libre?: string; paginas?: number }): Promise<EstadoBusqueda> {
+  const yo = await requerirUsuario();
+  const paginas = Math.min(Math.max(Number(entrada.paginas ?? 1), 1), 3);
+  const libre = entrada.libre?.trim();
+  const termino = libre || RUBROS.find((r) => r.nombre === entrada.rubro)?.busqueda || entrada.rubro;
+  const rubro = libre ? "Otro" : entrada.rubro;
+  if (!termino || !entrada.distrito) return { error: "Elige un rubro (o escribe una búsqueda) y un distrito." };
+
+  const cupo = await cupoGoogle();
+  if (paginas > cupo.restantes) {
+    const motivo = cupo.usadasDia >= cupo.limiteDia ? `el tope diario de ${cupo.limiteDia} consultas. Mañana se renueva` : `el tope gratuito de ${cupo.limiteMes} consultas este mes. El 1.º se renueva`;
+    return { error: `Se alcanzó ${motivo}. Así Google nunca le cobra.`, cupo };
+  }
+
+  const consulta = `${termino} en ${entrada.distrito}, Lima, Perú`;
+  try {
+    const { lugares, consultas } = await buscarLugares(consulta, paginas, async () => {
+      await insert("searches", { query: consulta, results: 0, author: yo });
+    });
+    const ids = lugares.map((l) => l.place_id);
+    const existentes = ids.length
+      ? await select<{ place_id: string }>(`prospects?select=place_id&place_id=in.(${ids.map((i) => `"${i}"`).join(",")})`)
+      : [];
+    const set = new Set(existentes.map((e) => e.place_id));
+    const resultados: PlaceResult[] = lugares.map((l) => ({ ...l, rubro, ya_registrado: set.has(l.place_id) }));
+    return { resultados, consultas, cupo: await cupoGoogle() };
+  } catch (e) {
+    return { error: (e as Error).message, cupo: await cupoGoogle() };
+  }
+}
+
+export async function agregarDesdeMaps(entrada: { distrito: string; lugares: PlaceResult[] }): Promise<{ agregados: number }> {
+  const yo = await requerirUsuario();
+  if (!entrada.lugares.length) return { agregados: 0 };
+  const filas = entrada.lugares.map((l) => ({
+    place_id: l.place_id,
+    name: l.name,
+    category: l.rubro,
+    district: entrada.distrito,
+    address: l.address,
+    phone: normalizarTelefono(l.phone),
+    website: l.website,
+    web_status: l.web_status,
+    rating: l.rating,
+    reviews: l.reviews,
+    maps_url: l.maps_url,
+    owner: yo,
+    stage: "Nuevo",
+    notes: l.tipo ? `Tipo en Google: ${l.tipo}` : null,
+  }));
+  const res = await insert<Prospect>("prospects", filas, { onConflict: "place_id", ignoreDuplicates: true });
+  refrescar();
+  return { agregados: res.length };
+}
+
+// ---------------- Carga rápida (sin Google) ----------------
+
+export type EstadoCargaRapida = { ok?: string; error?: string; duplicado?: { id: string; name: string } };
+
+/** Agrega un negocio copiado a mano desde Google Maps. Avisa si el teléfono ya existe. */
+export async function cargaRapida(_prev: EstadoCargaRapida | undefined, f: FormData): Promise<EstadoCargaRapida> {
+  const yo = await requerirUsuario();
+  const name = txt(f, "name");
+  if (!name) return { error: "Escribe el nombre del negocio." };
+  const phone = txt(f, "phone");
+  const digitos = (phone ?? "").replace(/\D/g, "").replace(/^51(?=\d{9}$)/, "");
+  if (digitos.length >= 7) {
+    const [dup] = await select<{ id: string; name: string }>(`prospects?select=id,name&phone=ilike.*${enc(digitos.slice(-7))}*&limit=1`);
+    if (dup && f.get("forzar") !== "1") return { error: `Ese teléfono ya está registrado en “${dup.name}”.`, duplicado: dup };
+  }
+  await insert("prospects", {
+    name,
+    category: txt(f, "category"),
+    district: txt(f, "district"),
+    phone: normalizarTelefono(phone),
+    reviews: num(f, "reviews") ?? 0,
+    rating: num(f, "rating"),
+    web_status: txt(f, "web_status") ?? "sin_web",
+    maps_url: txt(f, "maps_url"),
+    owner: yo,
+    stage: "Nuevo",
+  });
+  refrescar();
+  return { ok: `“${name}” agregado.` };
+}
+
+// ---------------- Prospectos ----------------
+
+function datosProspecto(f: FormData) {
+  return {
+    name: txt(f, "name") ?? "(sin nombre)",
+    category: txt(f, "category"),
+    district: txt(f, "district"),
+    address: txt(f, "address"),
+    phone: normalizarTelefono(txt(f, "phone")),
+    email: txt(f, "email"),
+    reviews: num(f, "reviews") ?? 0,
+    rating: num(f, "rating"),
+    web_status: txt(f, "web_status") ?? "sin_web",
+    website: txt(f, "website"),
+    maps_url: txt(f, "maps_url"),
+    owner: txt(f, "owner"),
+    amount_usd: num(f, "amount_usd"),
+    notes: txt(f, "notes"),
+    tags: (txt(f, "tags") ?? "")
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean),
+  };
+}
+
+export async function crearProspecto(f: FormData) {
+  const yo = await requerirUsuario();
+  const datos = datosProspecto(f);
+  const [p] = await insert<Prospect>("prospects", { ...datos, owner: datos.owner ?? yo, stage: "Nuevo" });
+  refrescar();
+  redirect(`/prospectos/${p.id}`);
+}
+
+export async function actualizarProspecto(id: string, f: FormData) {
+  await requerirUsuario();
+  const datos = datosProspecto(f);
+  const seguimiento = txt(f, "next_follow_up");
+  await update("prospects", `id=eq.${id}`, { ...datos, next_follow_up: seguimiento, updated_at: new Date().toISOString() });
+  refrescar(id);
+}
+
+export async function eliminarProspecto(id: string) {
+  await requerirUsuario();
+  await remove("prospects", `id=eq.${id}`);
+  refrescar();
+  redirect("/prospectos");
+}
+
+async function traer(id: string): Promise<Prospect> {
+  const [p] = await select<Prospect>(`prospects?select=*&id=eq.${id}`);
+  if (!p) throw new Error("Prospecto no encontrado");
+  return p;
+}
+
+/** Registra un toque con plantilla (se llama después de abrir WhatsApp o el correo). */
+export async function registrarToque(id: string, canal: "whatsapp" | "email" | "llamada", plantilla: string | null, detalle?: string) {
+  const yo = await requerirUsuario();
+  const p = await traer(id);
+  let cuenta = true;
+  if (plantilla) {
+    const [t] = await select<Template>(`templates?select=counts_touch&code=eq.${enc(plantilla)}`);
+    cuenta = t?.counts_touch ?? true;
+  }
+  const cambios = cambiosPorToque(p, hoy(), cuenta);
+  const ahora = new Date().toISOString();
+  const marca = canal === "whatsapp" ? { wa_sent_at: ahora } : canal === "email" ? { email_sent_at: ahora } : { call_at: ahora };
+  await update("prospects", `id=eq.${id}`, { ...cambios, ...marca, updated_at: ahora });
+  await insert("activities", { prospect_id: id, kind: canal, template: plantilla, detail: detalle ?? null, author: yo });
+  refrescar(id);
+  revalidatePath("/flujo");
+}
+
+export async function registrarLlamada(id: string, f: FormData) {
+  const resultado = txt(f, "resultado") ?? "Llamada";
+  const nota = txt(f, "nota");
+  await registrarToque(id, "llamada", null, nota ? `${resultado} — ${nota}` : resultado);
+  if (resultado === "Interesado") await cambiarEtapa(id, "Interesado");
+  if (resultado === "No le interesa") await cambiarEtapa(id, "Perdido");
+}
+
+export async function agregarNota(id: string, f: FormData) {
+  const yo = await requerirUsuario();
+  const nota = txt(f, "nota");
+  if (!nota) return;
+  await insert("activities", { prospect_id: id, kind: "nota", detail: nota, author: yo });
+  refrescar(id);
+}
+
+export async function cambiarEtapa(id: string, etapa: string) {
+  const yo = await requerirUsuario();
+  if (!(ETAPAS as readonly string[]).includes(etapa)) return;
+  const p = await traer(id);
+  if (p.stage === etapa) return;
+  const extra: Partial<Prospect> = {};
+  if (etapa === "Respondió" || etapa === "Interesado") extra.next_follow_up = sumarDias(hoy(), 1);
+  await update("prospects", `id=eq.${id}`, { ...extra, ...cambiosPorEtapa(etapa), updated_at: new Date().toISOString() });
+  await insert("activities", { prospect_id: id, kind: "estado", detail: `${p.stage} → ${etapa}`, author: yo });
+  refrescar(id);
+}
+
+export async function posponer(id: string, dias: number) {
+  await requerirUsuario();
+  await update("prospects", `id=eq.${id}`, { next_follow_up: sumarDias(hoy(), dias) });
+  refrescar(id);
+}
+
+export async function guardarEmail(id: string, f: FormData) {
+  await requerirUsuario();
+  const email = txt(f, "email");
+  if (!email) return;
+  await update("prospects", `id=eq.${id}`, { email, updated_at: new Date().toISOString() });
+  refrescar(id);
+  revalidatePath("/flujo");
+}
+
+export type Canal = "whatsapp" | "llamada" | "email";
+const COLUMNA_RESULTADO: Record<Canal, string> = { whatsapp: "wa_result", llamada: "call_result", email: "email_result" };
+const TEXTO_RESULTADO: Record<string, string> = { positivo: "Respuesta positiva", negativo: "Respuesta negativa", sin_respuesta: "Sin respuesta", no_contesto: "No contestó" };
+
+/** Anota cómo respondió el negocio en un canal. Positiva → etapa Interesado. */
+export async function registrarResultado(id: string, canal: Canal, resultado: string | null) {
+  const yo = await requerirUsuario();
+  const p = await traer(id);
+  const patch: Record<string, unknown> = { [COLUMNA_RESULTADO[canal]]: resultado, updated_at: new Date().toISOString() };
+  if (resultado === "positivo" && ["Nuevo", "Contactado", "Respondió"].includes(p.stage)) {
+    patch.stage = "Interesado";
+    patch.next_follow_up = sumarDias(hoy(), 1);
+  }
+  await update("prospects", `id=eq.${id}`, patch);
+  const nombreCanal = canal === "whatsapp" ? "WhatsApp" : canal === "llamada" ? "Llamada" : "Email";
+  await insert("activities", {
+    prospect_id: id,
+    kind: "estado",
+    detail: resultado ? `${nombreCanal}: ${TEXTO_RESULTADO[resultado] ?? resultado}${patch.stage ? " → Interesado" : ""}` : `${nombreCanal}: respuesta borrada`,
+    author: yo,
+  });
+  refrescar(id);
+  revalidatePath("/flujo");
+}
+
+// ---------------- Calendario ----------------
+
+export async function crearEvento(f: FormData) {
+  const yo = await requerirUsuario();
+  const title = txt(f, "title");
+  const day = txt(f, "day");
+  if (!title || !day) return;
+  const prospect_id = txt(f, "prospect_id");
+  await insert("events", { title, day, time: txt(f, "time"), kind: txt(f, "kind") ?? "reunion", owner: txt(f, "owner") ?? yo, prospect_id });
+  if (prospect_id) await insert("activities", { prospect_id, kind: "nota", detail: `Agendado: ${title} el ${day}${txt(f, "time") ? ` ${txt(f, "time")}` : ""}`, author: yo });
+  refrescar(prospect_id ?? undefined);
+}
+
+export async function alternarEvento(id: string, done: boolean) {
+  await requerirUsuario();
+  await update("events", `id=eq.${id}`, { done });
+  refrescar();
+}
+
+export async function eliminarEvento(id: string) {
+  await requerirUsuario();
+  await remove("events", `id=eq.${id}`);
+  refrescar();
+}
+
+// ---------------- Plantillas ----------------
+
+export async function guardarPlantilla(code: string, f: FormData) {
+  await requerirUsuario();
+  await update("templates", `code=eq.${enc(code)}`, {
+    name: txt(f, "name") ?? code,
+    subject: txt(f, "subject"),
+    body: txt(f, "body") ?? "",
+    counts_touch: f.get("counts_touch") === "on",
+  });
+  refrescar();
+}
