@@ -6,10 +6,10 @@ import { cerrarSesion, iniciarSesion, requerirUsuario, verificarClave } from "@/
 import { ETAPAS, RUBROS } from "@/lib/constants";
 import { hoy, sumarDias } from "@/lib/dates";
 import { count, enc, insert, remove, select, update } from "@/lib/db";
-import { cambiosPorEtapa, cambiosPorToque } from "@/lib/followup";
+import { cambiosPorEtapa, cambiosPorToque, deshacerUltimo } from "@/lib/followup";
 import { buscarLugares } from "@/lib/places";
 import { normalizarTelefono } from "@/lib/format";
-import type { PlaceResult, Prospect, Template } from "@/lib/types";
+import type { Activity, PlaceResult, Prospect, Template } from "@/lib/types";
 
 const txt = (f: FormData, k: string) => {
   const v = f.get(k);
@@ -215,7 +215,15 @@ async function traer(id: string): Promise<Prospect> {
 }
 
 /** Registra un toque con plantilla (se llama después de abrir WhatsApp o el correo). */
-export async function registrarToque(id: string, canal: "whatsapp" | "email" | "llamada", plantilla: string | null, detalle?: string) {
+const COLUMNA_ENVIO = { whatsapp: "wa_sent_at", email: "email_sent_at", llamada: "call_at" } as const;
+const CANALES_TOQUE = ["whatsapp", "email", "llamada"] as const;
+
+/** Campos que cambia un toque. Se guardan antes de registrarlo para poder deshacerlo. */
+const CAMPOS_TOQUE = ["touches", "stage", "first_contact", "last_contact", "next_follow_up", "wa_sent_at", "email_sent_at", "call_at"] as const;
+export type FotoToque = { actividad: string; antes: Pick<Prospect, (typeof CAMPOS_TOQUE)[number]> };
+
+/** Registra un toque y devuelve cómo estaba el prospecto antes, para el botón "Deshacer". */
+export async function registrarToque(id: string, canal: "whatsapp" | "email" | "llamada", plantilla: string | null, detalle?: string): Promise<FotoToque> {
   const yo = await requerirUsuario();
   const p = await traer(id);
   let cuenta = true;
@@ -223,11 +231,65 @@ export async function registrarToque(id: string, canal: "whatsapp" | "email" | "
     const [t] = await select<Template>(`templates?select=counts_touch&code=eq.${enc(plantilla)}`);
     cuenta = t?.counts_touch ?? true;
   }
+  const antes = Object.fromEntries(CAMPOS_TOQUE.map((k) => [k, p[k]])) as FotoToque["antes"];
   const cambios = cambiosPorToque(p, hoy(), cuenta);
   const ahora = new Date().toISOString();
-  const marca = canal === "whatsapp" ? { wa_sent_at: ahora } : canal === "email" ? { email_sent_at: ahora } : { call_at: ahora };
-  await update("prospects", `id=eq.${id}`, { ...cambios, ...marca, updated_at: ahora });
-  await insert("activities", { prospect_id: id, kind: canal, template: plantilla, detail: detalle ?? null, author: yo });
+  await update("prospects", `id=eq.${id}`, { ...cambios, [COLUMNA_ENVIO[canal]]: ahora, updated_at: ahora });
+  const [actividad] = await insert<Activity>("activities", { prospect_id: id, kind: canal, template: plantilla, detail: detalle ?? null, author: yo });
+  refrescar(id);
+  revalidatePath("/flujo");
+  return { actividad: actividad.id, antes };
+}
+
+/** Deshace un toque recién registrado: devuelve el prospecto a como estaba y borra la actividad. */
+export async function deshacerToque(id: string, foto: FotoToque) {
+  const yo = await requerirUsuario();
+  const p = await traer(id);
+  const antes = Object.fromEntries(CAMPOS_TOQUE.map((k) => [k, foto.antes[k] ?? null])) as Record<string, unknown>;
+  if (!(ETAPAS as readonly string[]).includes(String(antes.stage))) antes.stage = p.stage;
+  antes.touches = Math.max(0, Number(antes.touches) || 0);
+  await remove("activities", `id=eq.${enc(foto.actividad)}&prospect_id=eq.${id}`);
+  await update("prospects", `id=eq.${id}`, { ...antes, updated_at: new Date().toISOString() });
+  await insert("activities", { prospect_id: id, kind: "estado", detail: "Toque deshecho (clic por error)", author: yo });
+  refrescar(id);
+  revalidatePath("/flujo");
+}
+
+/**
+ * Quita el último toque registrado (WhatsApp, email o llamada) y recalcula el seguimiento
+ * con los toques que quedan. Sirve para corregir clics por error detectados después.
+ */
+export async function deshacerUltimoToque(id: string) {
+  const yo = await requerirUsuario();
+  const p = await traer(id);
+  const toques = await select<Activity>(
+    `activities?select=*&prospect_id=eq.${id}&kind=in.(${CANALES_TOQUE.join(",")})&order=created_at.desc`,
+  );
+  const [ultimo, ...resto] = toques;
+  if (!ultimo) return;
+
+  let contaba = true;
+  if (ultimo.template) {
+    const [t] = await select<Template>(`templates?select=counts_touch&code=eq.${enc(ultimo.template)}`);
+    contaba = t?.counts_touch ?? true;
+  }
+  const cambios = deshacerUltimo(p, resto, contaba);
+  const canal = ultimo.kind as (typeof CANALES_TOQUE)[number];
+  const mismoCanal = resto.find((a) => a.kind === canal);
+
+  await remove("activities", `id=eq.${ultimo.id}`);
+  await update("prospects", `id=eq.${id}`, {
+    ...cambios,
+    [COLUMNA_ENVIO[canal]]: mismoCanal?.created_at ?? null,
+    updated_at: new Date().toISOString(),
+  });
+  const nombre = canal === "whatsapp" ? "WhatsApp" : canal === "email" ? "Email" : "Llamada";
+  await insert("activities", {
+    prospect_id: id,
+    kind: "estado",
+    detail: `Toque deshecho: ${nombre}${ultimo.template ? ` ${ultimo.template}` : ""} del ${ultimo.day}`,
+    author: yo,
+  });
   refrescar(id);
   revalidatePath("/flujo");
 }

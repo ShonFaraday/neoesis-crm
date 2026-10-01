@@ -90,6 +90,7 @@ async function Contenido({ p, tpl, yo }: { p: Prospect; tpl: Awaited<ReturnType<
             <MensajeWhatsApp
               key={t.code}
               prospectId={p.id}
+              prospecto={p.name}
               code={t.code}
               nombre={t.name}
               texto={rellenar(t.body, p, yo, perfil)}
@@ -106,7 +107,7 @@ async function Contenido({ p, tpl, yo }: { p: Prospect; tpl: Awaited<ReturnType<
             <p className="text-sm muted">
               Guion: preséntate, menciona sus {p.reviews} reseñas en Maps, que no tiene web y ofrece el boceto gratis por WhatsApp.
             </p>
-            <BotonesLlamada prospectId={p.id} telefono={tel || null} celular={celular} />
+            <BotonesLlamada prospectId={p.id} prospecto={p.name} telefono={tel || null} celular={celular} />
             <ResultadoCanal prospectId={p.id} canal="llamada" actual={p.call_result} habilitado={!!p.call_at} />
           </section>
 
@@ -122,6 +123,7 @@ async function Contenido({ p, tpl, yo }: { p: Prospect; tpl: Awaited<ReturnType<
               <MensajeEmail
                 key={t.code}
                 prospectId={p.id}
+                prospecto={p.name}
                 code={t.code}
                 nombre={t.name}
                 asunto={rellenar(t.subject ?? "", p, yo, perfil)}

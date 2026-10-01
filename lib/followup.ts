@@ -33,3 +33,38 @@ export function cambiosPorEtapa(etapa: string): Partial<Prospect> {
 export function plantillaSugerida(touches: number): string | null {
   return ["A", "B", "C", "D"][touches] ?? null;
 }
+
+/**
+ * Cambios al quitar el último toque. `restantes` son los toques que quedan en el historial,
+ * del más reciente al más antiguo. Si ya no queda ninguno, el prospecto vuelve a "Nuevo".
+ */
+export function deshacerUltimo(
+  p: Pick<Prospect, "touches" | "stage">,
+  restantes: { day: string }[],
+  contaba: boolean,
+): Partial<Prospect> {
+  const touches = contaba ? Math.max(0, p.touches - 1) : p.touches;
+
+  if (restantes.length === 0) {
+    // Toques sin historial (por ejemplo, importados): solo se corrige el contador.
+    if (touches > 0) return { touches };
+    return {
+      touches,
+      first_contact: null,
+      last_contact: null,
+      // En etapas más avanzadas (p. ej. Interesado) se respeta el seguimiento que ya tenían.
+      ...(p.stage === "Contactado" ? { stage: "Nuevo", next_follow_up: null } : {}),
+    };
+  }
+
+  const ultimo = restantes[0].day;
+  const primero = restantes[restantes.length - 1].day;
+  const cerrado = ETAPAS_CERRADAS.includes(p.stage);
+  const dias = DIAS_SIGUIENTE_TOQUE[touches];
+  return {
+    touches,
+    first_contact: primero,
+    last_contact: ultimo,
+    next_follow_up: !cerrado && dias ? sumarDias(ultimo, dias) : null,
+  };
+}

@@ -118,7 +118,7 @@ function FilaAccion({ p, tpl, yo, atraso }: { p: Prospect; tpl: Template[]; yo: 
       </div>
       <div className="flex gap-2 shrink-0">
         {code && esCelular(p.phone) ? (
-          <BotonToque prospectId={p.id} url={enlaceWhatsApp(p.phone, texto)} canal="whatsapp" plantilla={code} etiqueta={`WhatsApp ${code}`} />
+          <BotonToque prospectId={p.id} prospecto={p.name} url={enlaceWhatsApp(p.phone, texto)} canal="whatsapp" plantilla={code} etiqueta={`WhatsApp ${code}`} />
         ) : (
           enlaceLlamada(p.phone) && <a href={enlaceLlamada(p.phone)!} className="btn">Llamar</a>
         )}

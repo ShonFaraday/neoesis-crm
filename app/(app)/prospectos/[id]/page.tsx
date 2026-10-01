@@ -12,6 +12,7 @@ import {
 import { Estrellas, Etapa, Prioridad, Web } from "@/components/Badges";
 import BotonToque from "@/components/BotonToque";
 import CamposProspecto from "@/components/FormProspecto";
+import DeshacerUltimoToque from "@/components/DeshacerUltimoToque";
 import EstadoCanales from "@/components/EstadoCanales";
 import Etiquetas from "@/components/Etiquetas";
 import { nombresEquipo, perfilDe, requerirUsuario } from "@/lib/auth";
@@ -40,6 +41,7 @@ export default async function FichaProspecto({ params }: { params: Promise<{ id:
   const whatsapp = tpl.filter((t) => t.channel === "whatsapp");
   const emails = tpl.filter((t) => t.channel === "email");
   const celular = esCelular(p.phone);
+  const ultimoToque = historial.find((a) => a.kind === "whatsapp" || a.kind === "email" || a.kind === "llamada");
 
   async function etapaAccion(f: FormData) {
     "use server";
@@ -89,6 +91,15 @@ export default async function FichaProspecto({ params }: { params: Promise<{ id:
           <Dato k="Último contacto" v={fechaCorta(p.last_contact)} />
           <Dato k="Próximo seguimiento" v={fechaCorta(p.next_follow_up)} rojo={!!p.next_follow_up && p.next_follow_up <= hoy()} />
         </div>
+        {ultimoToque && (
+          <div className="flex flex-wrap items-center justify-end gap-2 text-xs muted">
+            <span>¿Registraste un toque por error?</span>
+            <DeshacerUltimoToque
+              prospectId={p.id}
+              ultimo={`${ICONO[ultimoToque.kind] ?? ultimoToque.kind}${ultimoToque.template ? ` ${ultimoToque.template}` : ""} del ${fechaHora(ultimoToque.created_at)}`}
+            />
+          </div>
+        )}
       </section>
 
       <div className="grid gap-4 md:grid-cols-[1.3fr_1fr]">
@@ -101,6 +112,7 @@ export default async function FichaProspecto({ params }: { params: Promise<{ id:
                 <BotonToque
                   key={t.code}
                   prospectId={p.id}
+                  prospecto={p.name}
                   canal="whatsapp"
                   plantilla={t.code}
                   url={enlaceWhatsApp(p.phone, rellenar(t.body, p, yo, perfilDe(yo)))}
@@ -109,7 +121,7 @@ export default async function FichaProspecto({ params }: { params: Promise<{ id:
                 />
               ))}
             </div>
-            <p className="text-xs muted">Al pulsar se abre WhatsApp con el mensaje listo y se registra el toque. Verde = el que toca ahora.</p>
+            <p className="text-xs muted">Al pulsar te pedimos confirmación; luego se abre WhatsApp con el mensaje listo y se registra el toque. Verde = el que toca ahora.</p>
             {emails.length > 0 && (
               <>
                 <h2 className="font-medium pt-2">Email</h2>
@@ -118,6 +130,7 @@ export default async function FichaProspecto({ params }: { params: Promise<{ id:
                     <BotonToque
                       key={t.code}
                       prospectId={p.id}
+                      prospecto={p.name}
                       canal="email"
                       plantilla={t.code}
                       url={enlaceEmail(p.email, rellenar(t.subject ?? "", p, yo, perfilDe(yo)), rellenar(t.body, p, yo, perfilDe(yo)))}
