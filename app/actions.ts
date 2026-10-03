@@ -9,6 +9,7 @@ import { count, enc, insert, remove, select, update } from "@/lib/db";
 import { cambiosPorEtapa, cambiosPorToque, deshacerUltimo } from "@/lib/followup";
 import { buscarLugares } from "@/lib/places";
 import { normalizarTelefono } from "@/lib/format";
+import { PLANTILLAS_WHATSAPP } from "@/lib/plantillas-recomendadas";
 import type { Activity, PlaceResult, Prospect, Template } from "@/lib/types";
 
 const txt = (f: FormData, k: string) => {
@@ -397,5 +398,12 @@ export async function guardarPlantilla(code: string, f: FormData) {
     body: txt(f, "body") ?? "",
     counts_touch: f.get("counts_touch") === "on",
   });
+  refrescar();
+}
+
+/** Copia a la base los textos recomendados de las plantillas de WhatsApp (A–E). */
+export async function aplicarPlantillasRecomendadas() {
+  await requerirUsuario();
+  for (const t of PLANTILLAS_WHATSAPP) await update("templates", `code=eq.${enc(t.code)}`, { body: t.body });
   refrescar();
 }

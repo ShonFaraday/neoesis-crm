@@ -93,19 +93,37 @@ grant all on all sequences in schema public to service_role;
 -- Plantillas iniciales (se pueden editar desde la app)
 insert into templates (code, name, channel, subject, body, counts_touch, sort) values
 ('A','Primer contacto (día 1)','whatsapp',null,
-'Hola, buenos días. ¿Hablo con {negocio}? Soy {yo} de Neoesis DEVS. Vi su ficha en Google Maps: {resenas} reseñas con {estrellas} estrellas, se nota que sus clientes están contentos. Noté que aún no tienen página web, y quienes buscan "{rubro} en {distrito}" terminan en la web de la competencia. Hacemos páginas para negocios como el suyo, con botón de WhatsApp, ubicación y sus reseñas. ¿Le puedo enviar un boceto gratuito de cómo se vería la de {negocio}? Sin compromiso.',
+'Hola, buenos días. ¿Hablo con {negocio}? Soy {yo} de Neoesis DEVS.
+
+{gancho_resenas}
+
+Noté además que aún no tienen página web, y quienes buscan "{rubro} en {distrito}" terminan en la web de la competencia. Hacemos páginas con {web_ejemplos}.
+
+Y no solo eso: también desarrollamos sistemas administrativos para tener todo {negocio} organizado: {sistema_ejemplos}.
+
+• {demo_sistema}: {link_sistema}
+• Aquí puede armar usted mismo un boceto de su página y de su sistema: {link_neoesis}
+
+Si toma la página y el sistema juntos, le hacemos un descuento especial. ¿Le preparo una propuesta sin compromiso?',
 true,1),
 ('B','Seguimiento con valor (día 3)','whatsapp',null,
-'Hola de nuevo. Le comparto un ejemplo de página que hicimos: https://neoesis.pe (cambiar por el enlace real). La de {negocio} podría estar lista en pocos días desde US$ 190, con dominio incluido. ¿Le armo el boceto?',
+'Hola de nuevo. Le dejo dos enlaces para que vea lo que podemos hacer por {negocio}:
+
+• {demo_sistema} ({sistema_ejemplos}): {link_sistema}
+• Arme usted mismo el boceto de su página web y de su sistema: {link_neoesis}
+
+La página puede estar lista en pocos días desde US$ 190 con dominio incluido, y si la toma junto con el sistema le aplicamos un descuento. ¿Qué le parece?',
 true,2),
 ('C','Pregunta corta (día 6)','whatsapp',null,
-'Una pregunta rápida: ¿la página web para {negocio} es algo que les interesa este año o lo dejamos para más adelante? Con un sí o un no me ayuda muchísimo.',
+'Una pregunta rápida: ¿una página web o un sistema para organizar {negocio} ({sistema_ejemplos}) es algo que les interesa este año, o lo dejamos para más adelante? Con un sí o un no me ayuda muchísimo.',
 true,3),
 ('D','Cierre de ciclo (día 10)','whatsapp',null,
-'Entiendo que deben estar con mucho trabajo. No le escribo más para no incomodar. Si más adelante necesitan su página web, aquí estamos: Neoesis DEVS, +51 940 009 717. ¡Éxitos con {negocio}!',
+'Entiendo que deben estar con mucho trabajo. No le escribo más para no incomodar. Si más adelante necesitan su página web o un sistema para ordenar {negocio}, aquí estamos: Neoesis DEVS, {mi_telefono}. Puede armar su boceto cuando quiera en {link_neoesis}. ¡Éxitos!',
 true,4),
 ('E','Respuesta a interesado','whatsapp',null,
-'¡Excelente! Para armar el boceto de {negocio} me ayudan 3 cosas: su logo (si tienen), 3 a 5 fotos del local o trabajos, y los servicios principales con horarios.',
+'¡Excelente! Para armar el boceto de {negocio} me ayudan 3 cosas: su logo (si tienen), 3 a 5 fotos del local o trabajos, y los servicios principales con horarios.
+
+Si también quieren el sistema, cuénteme qué les gustaría controlar ({sistema_ejemplos}) y lo incluimos en la propuesta con el descuento por llevar ambos.',
 false,5),
 ('M1','Email 1 — Primer contacto','email','{negocio} en Google: una idea rápida',
 'Hola:

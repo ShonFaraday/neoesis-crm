@@ -1,4 +1,4 @@
-import { guardarPlantilla } from "@/app/actions";
+import { aplicarPlantillasRecomendadas, guardarPlantilla } from "@/app/actions";
 import { requerirUsuario } from "@/lib/auth";
 import { plantillas } from "@/lib/data";
 
@@ -11,9 +11,15 @@ export default async function PlantillasPage() {
         <a href="/flujo" className="text-sm muted hover:text-white">← Flujo de contacto</a>
         <h1 className="text-2xl font-medium tracking-tight">Editar plantillas</h1>
         <p className="text-sm muted">
-          Variables: <code>{"{negocio}"}</code> <code>{"{rubro}"}</code> <code>{"{distrito}"}</code> <code>{"{resenas}"}</code> <code>{"{estrellas}"}</code> <code>{"{yo}"}</code>. Se reemplazan solas al enviar.
+          Variables: <code>{"{negocio}"}</code> <code>{"{rubro}"}</code> <code>{"{distrito}"}</code> <code>{"{resenas}"}</code> <code>{"{estrellas}"}</code> <code>{"{yo}"}</code> <code>{"{mi_telefono}"}</code>{" "}
+          <code>{"{gancho_resenas}"}</code> (cambia según tenga 0, menos de 15 o más reseñas) <code>{"{sistema_ejemplos}"}</code> <code>{"{web_ejemplos}"}</code> <code>{"{demo_sistema}"}</code> (según el rubro){" "}
+          <code>{"{link_sistema}"}</code> (demo Mi Mecánico) <code>{"{link_neoesis}"}</code> (cotizador). Se reemplazan solas al enviar.
         </p>
       </div>
+      <form action={aplicarPlantillasRecomendadas} className="card flex flex-wrap items-center justify-between gap-3 p-4">
+        <p className="text-sm muted">Reemplaza los textos de WhatsApp A–E por la versión recomendada: gancho según reseñas, oferta de página + sistema, enlaces y descuento por llevar ambos.</p>
+        <button className="btn btn-primary">Aplicar textos recomendados</button>
+      </form>
       {lista.map((t) => (
         <form key={t.code} action={guardarPlantilla.bind(null, t.code)} className="card p-4 space-y-2">
           <div className="flex items-center gap-2">
