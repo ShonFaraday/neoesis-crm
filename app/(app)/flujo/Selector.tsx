@@ -4,7 +4,7 @@ import { Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
-type Opcion = { id: string; name: string; district: string | null; category: string | null; stage: string };
+type Opcion = { id: string; name: string; district: string | null; category: string | null; stage: string; owner: string | null };
 
 /** Buscador de empresas: escribe y elige; carga sus datos en las plantillas. */
 export default function Selector({ opciones, actual }: { opciones: Opcion[]; actual?: string }) {
@@ -50,7 +50,7 @@ export default function Selector({ opciones, actual }: { opciones: Opcion[]; act
               >
                 <span className="truncate">{o.name}</span>
                 <span className="mono shrink-0 text-[10px] uppercase tracking-wider text-[var(--muted)]">
-                  {o.district ?? "—"} · {o.stage}
+                  {o.district ?? "—"} · {o.stage} · {o.owner ?? "sin encargado"}
                 </span>
               </button>
             </li>

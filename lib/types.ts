@@ -76,4 +76,9 @@ export type PlaceResult = {
   tipo: string | null;
   rubro: string;
   ya_registrado: boolean;
+  /** Prospecto que ya existe en el CRM (de cualquier usuario), si lo hay. */
+  registro: Registro | null;
 };
+
+/** Datos de un prospecto existente que se muestran al detectar un duplicado. */
+export type Registro = Pick<Prospect, "id" | "name" | "owner" | "stage" | "touches" | "last_contact">;

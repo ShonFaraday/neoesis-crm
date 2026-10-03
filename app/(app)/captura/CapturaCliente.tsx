@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useRef, useState, useTransition } from "react";
 import { agregarDesdeMaps, buscarRubro, type Cupo } from "@/app/actions";
 import { Estrellas, Web } from "@/components/Badges";
 import type { Rubro } from "@/lib/constants";
+import { describirRegistro } from "@/lib/format";
 import type { PlaceResult } from "@/lib/types";
 
 type Props = { rubros: Rubro[]; zonas: Record<string, string[]>; cupo: Cupo };
@@ -129,7 +131,11 @@ export default function CapturaCliente({ rubros, zonas, cupo: cupoInicial }: Pro
         for (const l of lista) x.delete(l.place_id);
         return x;
       });
-      setMensaje(`${n} prospecto(s) agregado(s). Ya aparecen en Hoy → Nuevos por contactar.`);
+      const omitidos = lista.length - n;
+      setMensaje(
+        `${n} prospecto(s) agregado(s). Ya aparecen en Hoy → Nuevos por contactar.` +
+          (omitidos > 0 ? ` ${omitidos} no se agregaron porque otro usuario ya los registró.` : ""),
+      );
     });
   };
 
@@ -302,7 +308,14 @@ export default function CapturaCliente({ rubros, zonas, cupo: cupoInicial }: Pro
                       <td>
                         <div className="font-semibold">{l.name}</div>
                         <div className="text-xs muted">{l.address}</div>
-                        {bloqueado && <div className="text-xs font-semibold text-white/45">Ya está en tu lista</div>}
+                        {l.registro ? (
+                          <div className="text-xs font-semibold text-amber-300/90">
+                            Ya registrado: {describirRegistro(l.registro)} ·{" "}
+                            <Link href={`/prospectos/${l.registro.id}`} className="underline">Ver ficha</Link>
+                          </div>
+                        ) : (
+                          bloqueado && <div className="text-xs font-semibold text-white/45">Agregado ahora</div>
+                        )}
                       </td>
                       <td className="text-xs">
                         {l.rubro}

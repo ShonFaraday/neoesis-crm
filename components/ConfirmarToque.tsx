@@ -3,7 +3,7 @@
 import { AlertTriangle, RotateCcw, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
-import { deshacerToque, type FotoToque } from "@/app/actions";
+import { avisoToqueAjeno, deshacerToque, type FotoToque } from "@/app/actions";
 
 export type PedidoToque = {
   prospectId: string;
@@ -28,7 +28,17 @@ const SEGUNDOS_DESHACER = 12;
 export function useToqueConfirmado() {
   const [pedido, setPedido] = useState<PedidoToque | null>(null);
   const [aviso, setAviso] = useState<Aviso | null>(null);
+  const [alerta, setAlerta] = useState<string | null>(null);
   const [pendiente, start] = useTransition();
+
+  // Al pedir confirmación, revisa en el momento si otro usuario ya contactó a este negocio.
+  const pedir = useCallback((p: PedidoToque) => {
+    setAlerta(null);
+    setPedido(p);
+    avisoToqueAjeno(p.prospectId)
+      .then(setAlerta)
+      .catch(() => setAlerta(null));
+  }, []);
 
   // El aviso se cierra solo pasado un tiempo
   useEffect(() => {
@@ -69,16 +79,26 @@ export function useToqueConfirmado() {
 
   const ui = (
     <>
-      {pedido && <Dialogo pedido={pedido} onConfirmar={confirmar} onCancelar={() => setPedido(null)} />}
+      {pedido && <Dialogo pedido={pedido} alerta={alerta} onConfirmar={confirmar} onCancelar={() => setPedido(null)} />}
       {aviso && <AvisoDeshacer aviso={aviso} pendiente={pendiente} onDeshacer={deshacer} onCerrar={() => setAviso(null)} />}
     </>
   );
 
-  return { pedir: setPedido, pendiente, ui };
+  return { pedir, pendiente, ui };
 }
 
 /** Ventana de confirmación (también la usa "Deshacer último toque"). */
-export function Dialogo({ pedido, onConfirmar, onCancelar }: { pedido: Pick<PedidoToque, "titulo" | "detalle" | "accion">; onConfirmar: () => void; onCancelar: () => void }) {
+export function Dialogo({
+  pedido,
+  alerta,
+  onConfirmar,
+  onCancelar,
+}: {
+  pedido: Pick<PedidoToque, "titulo" | "detalle" | "accion">;
+  alerta?: string | null; // Aviso si otro usuario ya contactó al negocio
+  onConfirmar: () => void;
+  onCancelar: () => void;
+}) {
   const confirmarRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -109,6 +129,7 @@ export function Dialogo({ pedido, onConfirmar, onCancelar }: { pedido: Pick<Pedi
             <p id="toque-detalle" className="mt-1 text-sm muted">{pedido.detalle}</p>
           </div>
         </div>
+        {alerta && <p className="mt-4 rounded-lg border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-200">{alerta}</p>}
         <div className="mt-5 flex flex-wrap justify-end gap-2">
           <button type="button" className="btn" onClick={onCancelar}>
             Cancelar

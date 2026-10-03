@@ -32,11 +32,11 @@ type RawPlace = {
  * Busca en Google Places (Text Search New). Cada página = 1 consulta facturable, hasta 20 resultados.
  * Devuelve los lugares y cuántas consultas se usaron.
  */
-export async function buscarLugares(texto: string, paginas: number, antesDeConsultar?: () => Promise<void>): Promise<{ lugares: Omit<PlaceResult, "ya_registrado" | "rubro">[]; consultas: number }> {
+export async function buscarLugares(texto: string, paginas: number, antesDeConsultar?: () => Promise<void>): Promise<{ lugares: Omit<PlaceResult, "ya_registrado" | "registro" | "rubro">[]; consultas: number }> {
   const key = process.env.GOOGLE_PLACES_API_KEY;
   if (!key) throw new Error("Falta GOOGLE_PLACES_API_KEY en las variables de entorno.");
 
-  const lugares: Omit<PlaceResult, "ya_registrado" | "rubro">[] = [];
+  const lugares: Omit<PlaceResult, "ya_registrado" | "registro" | "rubro">[] = [];
   let token: string | undefined;
   let consultas = 0;
 

@@ -1,15 +1,15 @@
 import Link from "next/link";
 import Kpi, { KpiMoneda } from "@/components/Kpi";
 import { tipoCambio } from "@/lib/tipoCambio";
-import { Estrellas, Etapa, Web } from "@/components/Badges";
+import { Encargado, Estrellas, Etapa, Web } from "@/components/Badges";
 import BotonToque from "@/components/BotonToque";
 import { perfilDe, requerirUsuario } from "@/lib/auth";
 import { metaDiaria, TIPO_EVENTO_LABEL } from "@/lib/constants";
 import { diasEntre, fechaCorta, hoy, sumarDias } from "@/lib/dates";
 import { count, select } from "@/lib/db";
-import { plantillaPorCodigo, plantillas } from "@/lib/data";
+import { plantillaPorCodigo, plantillas, ultimosToques } from "@/lib/data";
 import { plantillaSugerida } from "@/lib/followup";
-import { enlaceWhatsApp, esCelular, enlaceLlamada, rellenar } from "@/lib/format";
+import { enlaceWhatsApp, esCelular, enlaceLlamada, rellenar, type UltimoToque } from "@/lib/format";
 import type { EventRow, Prospect, Template } from "@/lib/types";
 
 export default async function HoyPage() {
@@ -28,6 +28,7 @@ export default async function HoyPage() {
     tipoCambio(),
   ]);
 
+  const ultimos = await ultimosToques([...seguimientos, ...porContactar].map((p) => p.id));
   const ingresosMes = ganadosMes.reduce((s, g) => s + Number(g.amount_usd ?? 0), 0);
 
   return (
@@ -53,7 +54,7 @@ export default async function HoyPage() {
         ) : (
           <ul className="divide-y divide-[var(--line)]">
             {seguimientos.map((p) => (
-              <FilaAccion key={p.id} p={p} tpl={tpl} yo={yo} atraso={diasEntre(p.next_follow_up!, d)} />
+              <FilaAccion key={p.id} p={p} tpl={tpl} yo={yo} ultimo={ultimos.get(p.id)} atraso={diasEntre(p.next_follow_up!, d)} />
             ))}
           </ul>
         )}
@@ -69,7 +70,7 @@ export default async function HoyPage() {
         ) : (
           <ul className="divide-y divide-[var(--line)]">
             {porContactar.map((p) => (
-              <FilaAccion key={p.id} p={p} tpl={tpl} yo={yo} />
+              <FilaAccion key={p.id} p={p} tpl={tpl} yo={yo} ultimo={ultimos.get(p.id)} />
             ))}
           </ul>
         )}
@@ -99,7 +100,7 @@ export default async function HoyPage() {
   );
 }
 
-function FilaAccion({ p, tpl, yo, atraso }: { p: Prospect; tpl: Template[]; yo: string; atraso?: number }) {
+function FilaAccion({ p, tpl, yo, ultimo, atraso }: { p: Prospect; tpl: Template[]; yo: string; ultimo?: UltimoToque; atraso?: number }) {
   const code = plantillaSugerida(p.touches);
   const t = plantillaPorCodigo(tpl, code);
   const texto = t ? rellenar(t.body, p, yo, perfilDe(yo)) : undefined;
@@ -114,6 +115,9 @@ function FilaAccion({ p, tpl, yo, atraso }: { p: Prospect; tpl: Template[]; yo: 
           <Estrellas rating={p.rating} reviews={p.reviews} />
           {atraso != null && atraso > 0 && <span className="chip bg-red-500/15 text-red-300">{atraso} d atrasado</span>}
           {p.touches > 0 && <span className="text-xs muted">· {p.touches} toque(s)</span>}
+        </div>
+        <div className="mt-0.5">
+          <Encargado owner={p.owner} ultimo={ultimo} yo={yo} />
         </div>
       </div>
       <div className="flex gap-2 shrink-0">

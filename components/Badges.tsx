@@ -1,4 +1,5 @@
 import { WEB_LABEL } from "@/lib/constants";
+import { textoToque, type UltimoToque } from "@/lib/format";
 
 const COLOR_ETAPA: Record<string, string> = {
   Nuevo: "bg-white/10 text-white/70",
@@ -24,6 +25,21 @@ export function Web({ estado }: { estado: string }) {
 export function Prioridad({ p }: { p: "Alta" | "Media" | "Baja" }) {
   const c = p === "Alta" ? "text-orange-400" : p === "Media" ? "text-white/70" : "text-white/45";
   return <span className={`text-xs font-bold ${c}`}>{p}</span>;
+}
+
+/** Quién lleva el contacto y quién lo tocó por última vez (visible para todo el equipo). */
+export function Encargado({ owner, ultimo, yo }: { owner: string | null; ultimo?: UltimoToque; yo: string }) {
+  const otro = !!ultimo?.author && ultimo.author !== yo;
+  return (
+    <span className="text-xs muted">
+      Encargado: <b className={owner && owner !== yo ? "text-amber-300" : "text-white/80"}>{owner ?? "sin asignar"}</b>
+      {ultimo && (
+        <>
+          {" "}· último toque: <span className={otro ? "text-amber-300" : ""}>{textoToque(ultimo)}</span>
+        </>
+      )}
+    </span>
+  );
 }
 
 export function Estrellas({ rating, reviews }: { rating: number | null; reviews: number }) {

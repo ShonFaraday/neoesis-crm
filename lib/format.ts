@@ -1,4 +1,4 @@
-import type { Prospect } from "./types";
+import type { Activity, Prospect } from "./types";
 
 /**
  * Número nacional peruano sin código de país (ej. "+51 987654321" → "987654321", "(01) 332-6249" → "13326249").
@@ -137,6 +137,29 @@ export function rellenar(
     .replaceAll("{yo}", yo)
     .replaceAll("{mi_telefono}", perfil?.telefono || process.env.TELEFONO_CONTACTO || "+51 940 009 717")
     .replaceAll("{mi_correo}", perfil?.email || "");
+}
+
+/** "Sin contactar aún" o "Contactado · 2 toques · último 28/09". */
+export function estadoContacto(r: Pick<Prospect, "touches" | "last_contact">): string {
+  const fecha = r.last_contact ? r.last_contact.slice(0, 10).split("-").reverse().slice(0, 2).join("/") : null;
+  if (!r.touches && !fecha) return "Sin contactar aún";
+  return `Contactado · ${r.touches} ${r.touches === 1 ? "toque" : "toques"}${fecha ? ` · último ${fecha}` : ""}`;
+}
+
+/** Resumen de un prospecto ya registrado: quién lo tiene, si se contactó y en qué etapa está. */
+export function describirRegistro(r: Pick<Prospect, "owner" | "stage" | "touches" | "last_contact">): string {
+  return `Registrado por ${r.owner ?? "nadie asignado"} · ${estadoContacto(r)} · Etapa: ${r.stage}`;
+}
+
+/** Datos del último toque (WhatsApp, llamada o correo) de un prospecto. */
+export type UltimoToque = Pick<Activity, "prospect_id" | "author" | "kind" | "template" | "day">;
+
+const CANAL_TXT: Record<string, string> = { whatsapp: "WhatsApp", llamada: "llamada", email: "correo" };
+
+/** "José el 28/09 (WhatsApp A)" */
+export function textoToque(a: Omit<UltimoToque, "prospect_id">): string {
+  const fecha = a.day.slice(0, 10).split("-").reverse().slice(0, 2).join("/");
+  return `${a.author ?? "alguien"} el ${fecha} (${CANAL_TXT[a.kind] ?? a.kind}${a.template ? ` ${a.template}` : ""})`;
 }
 
 export function prioridad(p: Pick<Prospect, "reviews" | "rating">): "Alta" | "Media" | "Baja" {

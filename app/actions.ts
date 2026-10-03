@@ -8,9 +8,10 @@ import { hoy, sumarDias } from "@/lib/dates";
 import { count, enc, insert, remove, select, update } from "@/lib/db";
 import { cambiosPorEtapa, cambiosPorToque, deshacerUltimo } from "@/lib/followup";
 import { buscarLugares } from "@/lib/places";
-import { normalizarTelefono } from "@/lib/format";
+import { indiceRegistros, buscarRegistro } from "@/lib/duplicados";
+import { describirRegistro, normalizarTelefono, textoToque, type UltimoToque } from "@/lib/format";
 import { PLANTILLAS_WHATSAPP } from "@/lib/plantillas-recomendadas";
-import type { Activity, PlaceResult, Prospect, Template } from "@/lib/types";
+import type { Activity, PlaceResult, Prospect, Registro, Template } from "@/lib/types";
 
 const txt = (f: FormData, k: string) => {
   const v = f.get(k);
@@ -94,12 +95,12 @@ export async function buscarRubro(entrada: { rubro: string; distrito: string; li
     const { lugares, consultas } = await buscarLugares(consulta, paginas, async () => {
       await insert("searches", { query: consulta, results: 0, author: yo });
     });
-    const ids = lugares.map((l) => l.place_id);
-    const existentes = ids.length
-      ? await select<{ place_id: string }>(`prospects?select=place_id&place_id=in.(${ids.map((i) => `"${i}"`).join(",")})`)
-      : [];
-    const set = new Set(existentes.map((e) => e.place_id));
-    const resultados: PlaceResult[] = lugares.map((l) => ({ ...l, rubro, ya_registrado: set.has(l.place_id) }));
+    // Se compara contra los prospectos de todo el equipo, por ficha de Maps y por teléfono.
+    const indice = await indiceRegistros();
+    const resultados: PlaceResult[] = lugares.map((l) => {
+      const registro = buscarRegistro(indice, l);
+      return { ...l, rubro, ya_registrado: !!registro, registro };
+    });
     return { resultados, consultas, cupo: await cupoGoogle() };
   } catch (e) {
     return { error: (e as Error).message, cupo: await cupoGoogle() };
@@ -108,8 +109,11 @@ export async function buscarRubro(entrada: { rubro: string; distrito: string; li
 
 export async function agregarDesdeMaps(entrada: { distrito: string; lugares: PlaceResult[] }): Promise<{ agregados: number }> {
   const yo = await requerirUsuario();
-  if (!entrada.lugares.length) return { agregados: 0 };
-  const filas = entrada.lugares.map((l) => ({
+  // Por si otro usuario lo agregó mientras tanto (o ya existe con el mismo teléfono).
+  const indice = await indiceRegistros();
+  const nuevos = entrada.lugares.filter((l) => !buscarRegistro(indice, l));
+  if (!nuevos.length) return { agregados: 0 };
+  const filas = nuevos.map((l) => ({
     place_id: l.place_id,
     name: l.name,
     category: l.rubro,
@@ -132,7 +136,13 @@ export async function agregarDesdeMaps(entrada: { distrito: string; lugares: Pla
 
 // ---------------- Carga rápida (sin Google) ----------------
 
-export type EstadoCargaRapida = { ok?: string; error?: string; duplicado?: { id: string; name: string } };
+export type EstadoCargaRapida = { ok?: string; error?: string; duplicado?: Registro };
+
+/** Si el teléfono ya está en el CRM (de cualquier usuario), el aviso con quién lo tiene y cómo va. */
+async function avisoDuplicado(phone: string | null): Promise<{ error: string; duplicado: Registro } | null> {
+  const dup = buscarRegistro(await indiceRegistros(), { phone });
+  return dup ? { error: `Ese teléfono ya está registrado en “${dup.name}”. ${describirRegistro(dup)}.`, duplicado: dup } : null;
+}
 
 /** Agrega un negocio copiado a mano desde Google Maps. Avisa si el teléfono ya existe. */
 export async function cargaRapida(_prev: EstadoCargaRapida | undefined, f: FormData): Promise<EstadoCargaRapida> {
@@ -140,10 +150,9 @@ export async function cargaRapida(_prev: EstadoCargaRapida | undefined, f: FormD
   const name = txt(f, "name");
   if (!name) return { error: "Escribe el nombre del negocio." };
   const phone = txt(f, "phone");
-  const digitos = (phone ?? "").replace(/\D/g, "").replace(/^51(?=\d{9}$)/, "");
-  if (digitos.length >= 7) {
-    const [dup] = await select<{ id: string; name: string }>(`prospects?select=id,name&phone=ilike.*${enc(digitos.slice(-7))}*&limit=1`);
-    if (dup && f.get("forzar") !== "1") return { error: `Ese teléfono ya está registrado en “${dup.name}”.`, duplicado: dup };
+  if (f.get("forzar") !== "1") {
+    const aviso = await avisoDuplicado(phone);
+    if (aviso) return aviso;
   }
   await insert("prospects", {
     name,
@@ -186,9 +195,14 @@ function datosProspecto(f: FormData) {
   };
 }
 
-export async function crearProspecto(f: FormData) {
+/** Crea un prospecto a mano. Si el teléfono ya existe, avisa primero; se crea igual al confirmar (`forzar`). */
+export async function crearProspecto(_prev: EstadoCargaRapida | undefined, f: FormData): Promise<EstadoCargaRapida> {
   const yo = await requerirUsuario();
   const datos = datosProspecto(f);
+  if (f.get("forzar") !== "1") {
+    const aviso = await avisoDuplicado(datos.phone);
+    if (aviso) return aviso;
+  }
   const [p] = await insert<Prospect>("prospects", { ...datos, owner: datos.owner ?? yo, stage: "Nuevo" });
   refrescar();
   redirect(`/prospectos/${p.id}`);
@@ -220,7 +234,7 @@ const COLUMNA_ENVIO = { whatsapp: "wa_sent_at", email: "email_sent_at", llamada:
 const CANALES_TOQUE = ["whatsapp", "email", "llamada"] as const;
 
 /** Campos que cambia un toque. Se guardan antes de registrarlo para poder deshacerlo. */
-const CAMPOS_TOQUE = ["touches", "stage", "first_contact", "last_contact", "next_follow_up", "wa_sent_at", "email_sent_at", "call_at"] as const;
+const CAMPOS_TOQUE = ["owner", "touches", "stage", "first_contact", "last_contact", "next_follow_up", "wa_sent_at", "email_sent_at", "call_at"] as const;
 export type FotoToque = { actividad: string; antes: Pick<Prospect, (typeof CAMPOS_TOQUE)[number]> };
 
 /** Registra un toque y devuelve cómo estaba el prospecto antes, para el botón "Deshacer". */
@@ -233,13 +247,28 @@ export async function registrarToque(id: string, canal: "whatsapp" | "email" | "
     cuenta = t?.counts_touch ?? true;
   }
   const antes = Object.fromEntries(CAMPOS_TOQUE.map((k) => [k, p[k]])) as FotoToque["antes"];
-  const cambios = cambiosPorToque(p, hoy(), cuenta);
+  const cambios: Partial<Prospect> = cambiosPorToque(p, hoy(), cuenta);
+  // Quien hace el primer contacto queda como encargado para todo el equipo.
+  if (!p.first_contact && p.stage === "Nuevo") cambios.owner = yo;
   const ahora = new Date().toISOString();
   await update("prospects", `id=eq.${id}`, { ...cambios, [COLUMNA_ENVIO[canal]]: ahora, updated_at: ahora });
   const [actividad] = await insert<Activity>("activities", { prospect_id: id, kind: canal, template: plantilla, detail: detalle ?? null, author: yo });
   refrescar(id);
   revalidatePath("/flujo");
   return { actividad: actividad.id, antes };
+}
+
+/**
+ * Si el último toque de este prospecto lo hizo OTRO usuario, devuelve el aviso para la ventana
+ * de confirmación (así nadie repite un contacto sin saberlo). Se consulta en el momento del clic.
+ */
+export async function avisoToqueAjeno(prospectId: string): Promise<string | null> {
+  const yo = await requerirUsuario();
+  const [a] = await select<UltimoToque>(
+    `activities?select=prospect_id,author,kind,template,day&prospect_id=eq.${enc(prospectId)}&kind=in.(${CANALES_TOQUE.join(",")})&order=created_at.desc&limit=1`,
+  );
+  if (!a?.author || a.author === yo) return null;
+  return `Ojo: este negocio ya lo contactó ${textoToque(a)}. Revisa su historial antes de repetir el contacto.`;
 }
 
 /** Deshace un toque recién registrado: devuelve el prospecto a como estaba y borra la actividad. */

@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { cargaRapida, type EstadoCargaRapida } from "@/app/actions";
+import AvisoDuplicado, { enviarSinBorrar } from "@/components/AvisoDuplicado";
 import type { Rubro } from "@/lib/constants";
 
 export default function CargaRapida({ rubros, zonas, hoyCargados }: { rubros: Rubro[]; zonas: Record<string, string[]>; hoyCargados: number }) {
@@ -58,7 +58,7 @@ export default function CargaRapida({ rubros, zonas, hoyCargados }: { rubros: Ru
         <a href={urlMaps} target="_blank" rel="noreferrer" className="btn btn-primary">Abrir en Google Maps ↗</a>
       </div>
 
-      <form ref={form} action={accion} className="grid gap-2 md:grid-cols-[2fr_1.2fr_0.7fr_0.7fr_1fr] md:items-end border-t pt-4">
+      <form ref={form} onSubmit={(e) => enviarSinBorrar(e, accion)} className="grid gap-2 md:grid-cols-[2fr_1.2fr_0.7fr_0.7fr_1fr] md:items-end border-t pt-4">
         <input type="hidden" name="category" value={rubro} />
         <input type="hidden" name="district" value={distrito} />
         <div>
@@ -92,16 +92,7 @@ export default function CargaRapida({ rubros, zonas, hoyCargados }: { rubros: Ru
         {estado?.duplicado && <input type="hidden" name="forzar" value="1" />}
       </form>
       {estado?.ok && <p className="text-sm text-emerald-400">{estado.ok} Sigue con el siguiente.</p>}
-      {estado?.error && (
-        <p className="text-sm text-red-400">
-          {estado.error}{" "}
-          {estado.duplicado && (
-            <>
-              <Link href={`/prospectos/${estado.duplicado.id}`} className="underline">Ver ficha</Link> · pulsa Agregar otra vez si es otro negocio.
-            </>
-          )}
-        </p>
-      )}
+      <AvisoDuplicado estado={estado} boton="Agregar" />
     </section>
   );
 }

@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { Mail, MessageCircle, Pencil, Phone } from "lucide-react";
 import { guardarEmail } from "@/app/actions";
-import { Estrellas, Etapa, Web } from "@/components/Badges";
+import { Encargado, Estrellas, Etapa, Web } from "@/components/Badges";
 import EstadoCanales from "@/components/EstadoCanales";
 import ResultadoCanal from "@/components/ResultadoCanal";
 import { perfilDe, requerirUsuario } from "@/lib/auth";
 import { fechaHora } from "@/lib/dates";
-import { plantillas } from "@/lib/data";
+import { plantillas, ultimosToques } from "@/lib/data";
 import { select, selectAll } from "@/lib/db";
 import { plantillaSugerida } from "@/lib/followup";
 import { esCelular, motivoSinWhatsApp, rellenar, soloDigitos } from "@/lib/format";
@@ -14,13 +14,13 @@ import type { Prospect } from "@/lib/types";
 import { BotonesLlamada, MensajeEmail, MensajeWhatsApp } from "./Mensaje";
 import Selector from "./Selector";
 
-type Opcion = Pick<Prospect, "id" | "name" | "district" | "category" | "stage">;
+type Opcion = Pick<Prospect, "id" | "name" | "district" | "category" | "stage" | "owner">;
 
 export default async function FlujoPage({ searchParams }: { searchParams: Promise<{ p?: string }> }) {
   const yo = await requerirUsuario();
   const { p: id } = await searchParams;
   const [opciones, tpl] = await Promise.all([
-    selectAll<Opcion>("prospects?select=id,name,district,category,stage&stage=not.in.(Perdido,Descartado)&order=updated_at.desc"),
+    selectAll<Opcion>("prospects?select=id,name,district,category,stage,owner&stage=not.in.(Perdido,Descartado)&order=updated_at.desc"),
     plantillas(),
   ]);
   const [p] = id ? await select<Prospect>(`prospects?select=*&id=eq.${id}`) : [];
@@ -58,6 +58,7 @@ async function Contenido({ p, tpl, yo }: { p: Prospect; tpl: Awaited<ReturnType<
   const mails = tpl.filter((t) => t.channel === "email");
   const perfil = perfilDe(yo);
   const cuentaGmail = perfil.email ?? process.env.EMAIL_CORPORATIVO;
+  const ultimo = (await ultimosToques([p.id])).get(p.id);
 
   return (
     <>
@@ -69,6 +70,9 @@ async function Contenido({ p, tpl, yo }: { p: Prospect; tpl: Awaited<ReturnType<
               <Etapa etapa={p.stage} />
               <Web estado={p.web_status} />
               <Estrellas rating={p.rating} reviews={p.reviews} />
+            </div>
+            <div className="mt-1">
+              <Encargado owner={p.owner} ultimo={ultimo} yo={yo} />
             </div>
             <p className="mono mt-1.5 text-xs text-[var(--muted)]">
               {p.category ?? "—"} · {p.district ?? "—"} · {p.phone ?? "sin teléfono"} · {p.email ?? "sin email"}
